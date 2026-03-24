@@ -1,1074 +1,393 @@
-# FinTrack - Complete Project Documentation Guide
+# FinTrack — MoSCoW Analysis
 
-## Document Structure for Word File
+## Project Overview
 
----
-
-## SECTION 1: PROJECT OVERVIEW
-
-### 1.1 Title Page
-- Project Name: FinTrack - Personal Finance Management System
-- Your Name, Roll Number, Department
-- Guide Name
-- College Name
-- Academic Year
-- Date of Submission
-
-### 1.2 Abstract (1 page)
-FinTrack is a web-based personal finance management application built using Django 6, SQLite, Bootstrap 5, and Chart.js. The system enables users to track expenses, manage income, set budget limits, monitor subscriptions, and achieve savings goals through an intuitive dashboard with real-time analytics and visualizations.
-
-**Key Features:**
-- User authentication and profile management
-- Expense tracking with category-based filtering
-- Income management with multiple sources
-- Monthly budget limits with alerts
-- Subscription tracker with auto-billing
-- Savings goals with progress tracking
-- Data export (CSV) with advanced filters
-- Dark mode support
-- Mobile-responsive design
-- Admin panel for user management
-
-**Technology Stack:**
-- Backend: Django 6.0.2 (Python)
-- Database: SQLite3
-- Frontend: Bootstrap 5.3, Chart.js 4.4
-- Icons: Bootstrap Icons 1.11
-- Additional: python-dateutil, Pillow
+FinTrack is a personal finance management web application built as a college-level project using **Django 6** (Python), **SQLite**, **Bootstrap 5**, **Chart.js**, and vanilla JavaScript. It allows users to track expenses, income, subscriptions, savings goals, and budgets — all scoped per authenticated user.
 
 ---
 
-## SECTION 2: SYSTEM REQUIREMENTS
+## Tech Stack
 
-### 2.1 Hardware Requirements
-- Processor: Intel Core i3 or equivalent
-- RAM: 4GB minimum, 8GB recommended
-- Storage: 500MB free space
-- Display: 1366x768 minimum resolution
+| Layer | Technology |
+|---|---|
+| Backend Framework | Django 6 (Python) |
+| Database | SQLite (via Django ORM) |
+| Frontend CSS | Bootstrap 5.3 + Custom CSS (styles.css) |
+| Icons | Bootstrap Icons 1.11 |
+| Charts | Chart.js (CDN) |
+| Fonts | Google Fonts — Inter |
+| Media Storage | Local filesystem (`/media/avatars/`) |
+| Auth | Django built-in `django.contrib.auth` |
+| Date Utilities | `python-dateutil` (`relativedelta`) |
+| Admin | Django Admin (customised) |
+| Static Files | Django `staticfiles` |
 
-### 2.2 Software Requirements
-- Operating System: Windows 10/11, macOS, or Linux
-- Python: 3.10 or higher
-- Web Browser: Chrome, Firefox, Safari, or Edge (latest versions)
-- Code Editor: VS Code, PyCharm, or any Python IDE
+---
 
-### 2.3 Dependencies (requirements.txt)
+## Project Structure
+
 ```
-Django==6.0.2
-Pillow==11.1.0
-python-dateutil==2.9.0
+fintrack/           → Django project config (settings, root URLs, WSGI/ASGI)
+accounts/           → Authentication app (register, login, logout, change password)
+expenses/           → Expense tracking app (CRUD, bulk delete, filters)
+dashboard/          → Core app (dashboard, income, budgets, subscriptions, savings, export, profile)
+templates/          → Global templates (base, navbar, footer, landing)
+static/             → CSS, JS, images
+media/              → User-uploaded files (avatars)
 ```
 
 ---
 
-## SECTION 3: SYSTEM ARCHITECTURE
+## Apps & Their Responsibilities
 
-### 3.1 Architecture Diagram
-[INSERT: High-level architecture diagram showing]
-- Client Layer (Browser)
-- Presentation Layer (Django Templates + Bootstrap)
-- Business Logic Layer (Django Views)
-- Data Access Layer (Django ORM)
-- Database Layer (SQLite)
+### `fintrack/` — Project Config
+- `settings.py` — installed apps, middleware, DB, static/media paths, auth redirects
+- `urls.py` — root URL dispatcher; includes `accounts/`, `dashboard/`, `expenses/`; serves media in dev
+- `wsgi.py` / `asgi.py` — deployment entry points
 
-### 3.2 Project Structure
-```
-fintrack/
-├── accounts/           # Authentication module
-├── dashboard/          # Core features (income, budgets, subscriptions, savings)
-├── expenses/           # Expense tracking module
-├── fintrack/           # Project configuration
-├── static/             # CSS, JS, images
-├── templates/          # Global templates
-├── media/              # User uploads (avatars)
-├── manage.py
-└── requirements.txt
-```
+### `accounts/` — Authentication
+- **Models:** none (uses Django's built-in `User`)
+- **Forms:** `MyUserCreationForm`, `LoginForm`, `ChangePasswordForm`
+- **Views:** `register_view`, `login_view`, `logout_view`, `change_password_view`
+- **Template:** `auth.html` — single template handles all 3 page types via `page_type` context variable
+- **URLs:** `/accounts/register/`, `/accounts/login/`, `/accounts/logout/`, `/accounts/change-password/`
 
-### 3.3 Database Schema (ER Diagram)
-[INSERT: ER diagram showing all models and relationships]
+### `expenses/` — Expense Tracking
+- **Model:** `Expense` — `user`, `title`, `category`, `amount`, `date`, `created_at`
+- **Default categories:** Food, Travel, Shopping, Bills, Transport, Entertainment, Savings (+ Subscription added dynamically)
+- **Forms:** `ExpenseForm` (ModelForm), `get_category_choices()` — merges default + custom categories per user
+- **Views:** `expense_list`, `add_expense`, `edit_expense`, `delete_expense`, `bulk_delete_expenses`
+- **Templates:** `expense_list.html`, `expense_form.html`, `expense_confirm_delete.html`
+- **URLs:** `/expenses/`, `/expenses/add/`, `/expenses/<pk>/edit/`, `/expenses/<pk>/delete/`, `/expenses/bulk-delete/`
 
-**Models:**
-- User (Django built-in)
-- UserProfile
-- Expense
-- Income
-- CustomCategory
-- CategoryBudget
-- Subscription
-- SavingsGoal
-- SavingsContribution
+### `dashboard/` — Core Feature App
+All primary features live here. See detailed breakdown below.
 
 ---
 
-## SECTION 4: MODULE-WISE FLOW WI   TH SCREENSHOTS
+## Dashboard App — Models
 
-### 4.1 AUTHENTICATION MODULE
+### `UserProfile`
+Extends Django's `User` with a one-to-one relationship.
+- `monthly_income` — DecimalField (legacy, not actively used in views)
+- `avatar` — ImageField, uploaded to `media/avatars/`
+- `onboarding_complete` — BooleanField, tracks whether the product tour has been completed
 
-#### Flow Diagram
-```
-Landing Page → Register → Login → Dashboard
-                    ↓
-              Change Password
-```
+### `CustomCategory`
+User-defined expense categories.
+- `user` FK, `name` CharField
+- Unique together: `(user, name)`
+- Merged with `DEFAULT_CATEGORIES` in `get_category_choices()`
 
-#### Screenshots Required:
-1. **Landing Page** (`/`)
-   - Screenshot showing welcome page with Register/Login buttons
-   - Caption: "Landing page for unauthenticated users"
+### `Income`
+Monthly income entries per user.
+- `user` FK, `date`, `source` (Salary/Freelance/Business/Investment/Gift/Other), `description`, `amount`
+- Used to compute balance, savings rate, and spending forecast on the dashboard
 
-2. **Registration Page** (`/accounts/register/`)
-   - Screenshot of registration form (username, email, password fields)
-   - Caption: "User registration with email and password validation"
+### `CategoryBudget`
+Per-user, per-category monthly spending limits.
+- `user` FK, `category`, `limit`, `month`, `year`
+- Unique together: `(user, category, month, year)`
+- `month=0 / year=0` reserved for "every month" (not currently used in UI)
 
-3. **Login Page** (`/accounts/login/`)
-   - Screenshot of login form
-   - Caption: "User authentication page"
+### `SavingsGoal`
+A financial target the user is saving toward.
+- `user` FK, `name`, `target`, `saved`, `target_date`, `icon`, `created_at`
+- `ICON_CHOICES` — 10 preset Bootstrap Icons (piggy-bank, house, car-front, etc.)
+- `progress_pct` property — safe division, clamps 0–100, handles None target/saved
+- `remaining` property — `max(target - saved, 0)`, handles None
 
-4. **Change Password** (`/accounts/change-password/`)
-   - Screenshot of password change form
-   - Caption: "Password reset functionality"
+### `SavingsContribution`
+Individual deposit records linked to a `SavingsGoal`.
+- `goal` FK, `amount`, `date`, `created_at`
+- Ordered by `-date, -created_at` (newest first)
+- Each deposit also creates an `Expense` with category `'Savings'`
 
-#### Code Files:
-```python
-# accounts/models.py
-# (No custom models - uses Django's built-in User)
-
-# accounts/forms.py
-[PASTE COMPLETE CODE]
-
-# accounts/views.py
-[PASTE COMPLETE CODE]
-
-# accounts/urls.py
-[PASTE COMPLETE CODE]
-
-# accounts/templates/accounts/auth.html
-[PASTE COMPLETE CODE]
-```
+### `Subscription`
+Recurring billing tracker.
+- `user` FK, `name`, `amount`, `cycle` (weekly/monthly/yearly), `category`, `next_billing`, `status` (active/paused/cancelled)
+- `monthly_cost` property — normalises weekly/yearly to monthly equivalent
+- `advance_billing_date()` — advances `next_billing` past today using `dateutil.relativedelta`, creates an `Expense` per elapsed cycle with category `'Subscription'`
 
 ---
 
-### 4.2 DASHBOARD MODULE
+## Dashboard App — Views
 
-#### Flow Diagram
-```
-Dashboard → View Stats → Filter by Date/Category
-    ↓
-Financial Health Score
-    ↓
-Charts (Category Breakdown, Daily Spending)
-    ↓
-Budget Alerts (if over 80%)
-    ↓
-Spending Forecast (current month)
-```
+### `landing`
+Public landing page. Redirects authenticated users straight to dashboard.
 
-#### Screenshots Required:
-1. **Main Dashboard** (`/dashboard/`)
-   - Full page screenshot showing:
-     - Month navigation
-     - 4 stat cards (Income, Spent, Balance, Savings Rate)
-     - Financial Health card
-     - Daily spending chart
-     - Category donut chart
-     - Top 5 categories
-     - Recent transactions
-   - Caption: "Main dashboard with analytics and visualizations"
+### `dashboard_view`
+The main analytics page.
+- Month/year navigation via `?month=&year=` query params
+- Custom date range via `?start_date=&end_date=`
+- Category filter via `?filter_cat=`
+- Computes: total spend, balance, savings rate, financial health label/tip
+- Previous month comparison → `savings_delta`
+- Category breakdown (Chart.js doughnut)
+- Daily spending (Chart.js line chart)
+- Top 5 categories list
+- Recent 5 expenses
+- **Spending Forecast** — only shown for current month (not custom range, not past months). Uses daily average × days in month to project end-of-month spend. Three statuses: `good` (purple), `warning` (amber), `danger` (rose-red)
+- **Product Tour** — passes `show_tour` flag if `onboarding_complete=False`
 
-2. **Dashboard with Filters Applied**
-   - Screenshot showing custom date range filter
-   - Caption: "Dashboard filtered by custom date range"
+### `tour_complete`
+POST-only endpoint at `/tour-complete/`. Sets `onboarding_complete=True` on `UserProfile`. Returns JSON `{ok: true}`.
 
-3. **Budget Alerts Banner**
-   - Screenshot showing alert when category exceeds 80%
-   - Caption: "Real-time budget alerts on dashboard"
+### `export_data`
+GET → renders filter page (`export.html`).
+POST → generates and streams a UTF-8 BOM CSV file.
+- Three date filter modes: Custom Range, Month/Year, Full Year
+- Data type checkboxes: Expenses, Income, Savings Goals, Subscriptions
+- Category multi-select (for expenses)
+- UTF-8 BOM (`\ufeff`) ensures correct rendering in Excel
 
-4. **Spending Forecast Card**
-   - Screenshot of forecast section (only visible for current month)
-   - Caption: "AI-powered spending forecast based on daily average"
+### `profile`
+Handles three POST actions via `action` field:
+- `avatar` — uploads new avatar image, deletes old file from disk
+- `remove_avatar` — deletes avatar file and clears field
+- default — updates `first_name`, `last_name`, `username`, `email`
 
-5. **Empty State**
-   - Screenshot when no expenses exist
-   - Caption: "Empty state with call-to-action for new users"
+### `settings` → redirects to `settings_income`
 
-6. **Dark Mode Dashboard**
-   - Screenshot of dashboard in dark theme
-   - Caption: "Dark mode support across all pages"
+### `settings_income`
+Lists income entries with filters (date range, source search). Shows total amount and record count.
 
-#### Code Files:
-```python
-# dashboard/models.py
-[PASTE COMPLETE CODE]
+### `income_add`, `income_edit`, `income_delete`
+Standard CRUD for `Income` model. All redirect back to `settings_income` with toast messages.
 
-# dashboard/views.py - dashboard_view function
-[PASTE COMPLETE CODE]
+### `settings_categories`
+Add/delete custom categories. Validates against duplicates and default category names.
 
-# dashboard/urls.py
-[PASTE COMPLETE CODE]
+### `settings_budget`
+Month/year navigable budget management.
+- Saves `CategoryBudget` per category per month/year
+- Computes spent vs limit per category → status: `ok` / `warning` (≥80%) / `danger` (≥100%)
+- Computes total budget goal and total spent summary row
 
-# dashboard/templates/dashboard/dashboard.html
-[PASTE COMPLETE CODE]
-```
+### `settings_upload`
+CSV import for expenses.
+- Two-step: preview (stores decoded CSV in session) → import
+- Validates required columns: `title`, `category`, `amount`, `date`
+- Invalid categories fall back to `'Other'`
+- Shows first 5 rows as preview before confirming import
 
----
+### `subscriptions`
+Lists all subscriptions. Auto-advances overdue billing dates on page load. Shows monthly/yearly totals, active count, upcoming billing count (within 7 days).
 
-### 4.3 EXPENSE TRACKING MODULE
+### `subscription_add`, `subscription_edit`, `subscription_delete`
+CRUD for `Subscription`. Add view separates creation from billing advance — billing advance failure is silently ignored so it doesn't affect the success toast.
 
-#### Flow Diagram
-```
-Expense List → Add Expense → Edit Expense → Delete Expense
-    ↓              ↓
-Filter by:    Category Warning
-- Month/Year  (if Savings/Subscription)
-- Search
-- Category
-- Date Range
-    ↓
-Bulk Delete
-```
+### `savings_goals`
+Lists all savings goals with total saved summary.
 
-#### Screenshots Required:
-1. **Expense List** (`/expenses/`)
-   - Screenshot showing table with all expenses
-   - Month navigation, search bar, category filter
-   - Caption: "Expense list with advanced filtering options"
+### `savings_goal_add`, `savings_goal_edit`, `savings_goal_delete`
+CRUD for `SavingsGoal`.
 
-2. **Add Expense Form** (`/expenses/add/`)
-   - Screenshot of expense creation form
-   - Caption: "Add new expense with category selection"
+### `savings_goal_detail`
+Shows goal progress and full contribution history timeline.
 
-3. **Category Warning**
-   - Screenshot showing inline warning when selecting "Savings" or "Subscription"
-   - Caption: "Smart category warnings guide users to correct features"
-
-4. **Edit Expense** (`/expenses/<id>/edit/`)
-   - Screenshot of edit form with pre-filled data
-   - Caption: "Edit existing expense"
-
-5. **Delete Confirmation** (`/expenses/<id>/delete/`)
-   - Screenshot of delete confirmation page
-   - Caption: "Confirmation before deleting expense"
-
-6. **Bulk Delete**
-   - Screenshot showing checkboxes selected with bulk delete button
-   - Caption: "Bulk delete multiple expenses at once"
-
-#### Code Files:
-```python
-# expenses/models.py
-[PASTE COMPLETE CODE]
-
-# expenses/forms.py
-[PASTE COMPLETE CODE]
-
-# expenses/views.py
-[PASTE COMPLETE CODE]
-
-# expenses/urls.py
-[PASTE COMPLETE CODE]
-
-# expenses/templates/expenses/expense_list.html
-[PASTE COMPLETE CODE]
-
-# expenses/templates/expenses/expense_form.html
-[PASTE COMPLETE CODE]
-
-# expenses/templates/expenses/expense_confirm_delete.html
-[PASTE COMPLETE CODE]
-```
+### `savings_goal_add_funds`
+Deposits funds into a goal:
+1. Validates `amount > 0` (shows error toast if not)
+2. Increments `goal.saved`
+3. Creates a `SavingsContribution` record
+4. Creates an `Expense` with category `'Savings'`
 
 ---
 
-### 4.4 SETTINGS MODULE
+## Dashboard App — Templates & UI Components
 
-#### Flow Diagram
-```
-Settings → Income Management
-        → Custom Categories
-        → Budget Limits (per month)
-        → CSV Upload
-```
+### `base.html`
+Global layout shell.
+- Includes navbar, footer, Bootstrap 5 CSS/JS, Bootstrap Icons, Inter font, custom CSS/JS
+- Toast container — renders Django `messages` framework toasts, auto-dismiss after 3.5s with slide-in animation
+- Theme toggle script — persists `light`/`dark` in `localStorage`, applies `data-theme` attribute on `<html>`
+- Dynamic category colour script — assigns palette colours to unknown/custom category badges at runtime
 
-#### 4.4.1 Income Management
+### `navbar.html`
+- Brand logo + name
+- Nav links: Dashboard, Expenses, Subscriptions, Savings Goals, Settings
+- User avatar (or initials fallback) with dropdown: Profile, Export Data, Change Password, Logout
+- Theme toggle button (moon/sun icon)
+- Responsive collapse for mobile
 
-**Screenshots:**
-1. **Income List** (`/settings/income/`)
-   - Screenshot showing income entries table with filters
-   - Caption: "Income tracking with source categorization"
+### `footer.html`
+Simple footer with brand name and copyright.
 
-2. **Add Income Modal**
-   - Screenshot of add income form
-   - Caption: "Add income entry with date, source, and amount"
+### `landing.html`
+Public marketing page shown to unauthenticated users. Links to Register and Login.
 
-**Code:**
-```python
-# dashboard/views.py - settings_income, income_add, income_edit, income_delete
-[PASTE RELEVANT FUNCTIONS]
-```
+### `dashboard/dashboard.html`
+Main dashboard page. Key sections:
+- Month/year navigation bar with prev/next arrows and dropdowns
+- Custom date range filter + category filter
+- Summary cards: Total Spent, Balance, Savings Rate (with delta vs prev month), Financial Health
+- Category breakdown doughnut chart (Chart.js)
+- Daily spending line chart (Chart.js)
+- Top 5 categories list with coloured badges
+- Recent 5 expenses table
+- **Spending Forecast card** — projected spend, daily average, days left, progress bar, status-coloured theme
+- **Product Tour** — JS tooltip-based overlay tour (5 steps), fires POST to `/tour-complete/` on completion
 
-#### 4.4.2 Custom Categories
+### `dashboard/settings.html`
+Multi-section settings page controlled by `section` context variable. Sections:
+- **Income** — filterable table, add/edit/delete modals
+- **Categories** — default category chips, custom category add/delete
+- **Budget** — month-navigable budget cards per category with progress bars and status colours
+- **Upload** — CSV upload with preview step
 
-**Screenshots:**
-1. **Categories Page** (`/settings/categories/`)
-   - Screenshot showing default and custom category chips
-   - Caption: "Manage custom expense categories"
+### `dashboard/subscriptions.html`
+Subscription tracker with summary stats, add/edit/delete modals, status badges, due-soon highlighting.
 
-**Code:**
-```python
-# dashboard/views.py - settings_categories
-[PASTE COMPLETE FUNCTION]
-```
+### `dashboard/savings_goals.html`
+Goal cards with circular icon, progress bar, Add Funds button, edit/delete. Icon picker modal with preset grid + custom Bootstrap Icons input with live preview.
 
-#### 4.4.3 Budget Limits
+### `dashboard/savings_goal_detail.html`
+Goal detail page: progress ring, stats, deposit form, contribution history timeline.
 
-**Screenshots:**
-1. **Budget Settings** (`/settings/budget/`)
-   - Screenshot showing budget cards for each category
-   - Month navigation
-   - "Copy Last Month" button
-   - Caption: "Set monthly spending limits per category"
+### `dashboard/profile.html`
+Profile page: avatar upload/remove, edit name/username/email, link to Export Data page.
 
-2. **Budget Card States**
-   - Screenshot showing OK (green), Warning (amber), Danger (red) states
-   - Caption: "Visual budget status indicators"
+### `dashboard/export.html`
+Export data page with three filter modes (Custom Range, Month/Year, Full Year), data type checkboxes, category multi-select, download button.
 
-3. **Copy from Last Month**
-   - Screenshot after clicking copy button with success toast
-   - Caption: "One-click budget copying from previous month"
+### `expenses/expense_list.html`
+Expense list with month/year navigation, search, category multi-filter, custom date range, bulk delete checkboxes, total and count summary.
 
-**Code:**
-```python
-# dashboard/views.py - settings_budget, budget_copy_last_month
-[PASTE COMPLETE FUNCTIONS]
-```
+### `expenses/expense_form.html`
+Add/Edit expense form. Inline JS warning shown when category is `'Savings'` or `'Subscription'` — links user to the relevant page.
 
-#### 4.4.4 CSV Upload
+### `expenses/expense_confirm_delete.html`
+Simple delete confirmation page.
 
-**Screenshots:**
-1. **Upload Page** (`/settings/upload/`)
-   - Screenshot of CSV upload form with format guide
-   - Caption: "Bulk import expenses via CSV"
-
-2. **Preview Step**
-   - Screenshot showing first 5 rows preview
-   - Caption: "Preview data before importing"
-
-3. **Import Success**
-   - Screenshot with success message showing count
-   - Caption: "Successful bulk import confirmation"
-
-**Code:**
-```python
-# dashboard/views.py - settings_upload
-[PASTE COMPLETE FUNCTION]
-```
+### `accounts/auth.html`
+Single template for Register, Login, and Change Password — switches content based on `page_type` context variable.
 
 ---
 
-### 4.5 SUBSCRIPTIONS MODULE
+## Frontend — `static/css/styles.css`
 
-#### Flow Diagram
-```
-Subscriptions List → Add Subscription → Auto-billing on due date
-    ↓                      ↓
-Summary Stats      Edit/Delete/Pause
-(Monthly/Yearly)          ↓
-    ↓              Creates Expense automatically
-Due Soon Alerts
-```
+Custom CSS built on top of Bootstrap 5. Key sections:
+- CSS custom properties (`--bg`, `--card`, `--text`, `--border`, `--accent`) for light/dark theming
+- `[data-theme="dark"]` overrides for all components
+- Dashboard summary cards (`.db-card`)
+- Expense list styles (`.el-*`)
+- Expense form styles (`.ef-*`, `.ef-warn` — category warning banner)
+- Budget card styles (`.bc-*`) — accent border, hover lift, status colours
+- Savings goal card styles (`.sg-*`)
+- Subscription styles
+- Forecast card styles (`.fc-*`) — gradient top border, status-coloured icon box and progress bar
+- Toast notification styles (`.ft-toast*`) — slide-in animation, colour variants, dark mode, mobile full-width
+- Product tour styles (`.tour-*`) — spotlight overlay, popover
+- Mobile responsive breakpoints at 991px, 768px, 480px — touch targets min 44px, horizontal scroll on tables
 
-#### Screenshots Required:
-1. **Subscriptions Page** (`/subscriptions/`)
-   - Screenshot showing subscription cards
-   - Summary stats at top (monthly cost, yearly cost, active count, upcoming)
-   - Caption: "Track recurring subscriptions with auto-billing"
-
-2. **Add Subscription Modal**
-   - Screenshot of add form with cycle options (weekly/monthly/yearly)
-   - Caption: "Add new subscription with billing cycle"
-
-3. **Due Soon Highlighting**
-   - Screenshot showing subscriptions due within 7 days highlighted
-   - Caption: "Visual alerts for upcoming billing dates"
-
-4. **Subscription States**
-   - Screenshot showing active, paused, and cancelled subscriptions
-   - Caption: "Manage subscription lifecycle"
-
-#### Code Files:
-```python
-# dashboard/models.py - Subscription model with advance_billing_date method
-[PASTE SUBSCRIPTION MODEL]
-
-# dashboard/views.py - subscriptions, subscription_add, subscription_edit, subscription_delete
-[PASTE COMPLETE FUNCTIONS]
-
-# dashboard/templates/dashboard/subscriptions.html
-[PASTE COMPLETE CODE]
-```
+## Frontend — `static/js/filters.js`
+Client-side filter helpers for the expense list page (category multi-select, search, date range interactions).
 
 ---
 
-### 4.6 SAVINGS GOALS MODULE
+## Admin Panel — `dashboard/admin.py`
 
-#### Flow Diagram
-```
-Savings Goals List → Create Goal → Goal Detail Page
-    ↓                    ↓              ↓
-Total Saved      Icon Picker    Add Funds → Creates Expense
-    ↓                    ↓              ↓
-Progress Bars    Target Date    Contribution History
-```
+Custom `FinTrackUserAdmin` extends Django's `BaseUserAdmin`:
+- All user data shown as inlines on the User detail page (not separate list pages)
+- Inlines: `UserProfileInline` (stacked), `IncomeInline`, `ExpenseInline`, `CategoryBudgetInline`, `SubscriptionInline`, `SavingsGoalInline`, `CustomCategoryInline` (all tabular)
+- Income/Expense/Subscription/SavingsGoal inlines are read-only (no accidental edits)
+- Actions: `deactivate_users`, `activate_users` (deactivate skips superusers)
+- User list columns: `username`, `email`, `date_joined`, `last_login`, `is_active`
+- Default ordering: `date_joined` ascending
 
-#### Screenshots Required:
-1. **Savings Goals Page** (`/savings-goals/`)
-   - Screenshot showing goal cards with progress bars
-   - Caption: "Track multiple savings goals with visual progress"
-
-2. **Add Goal Modal with Icon Picker**
-   - Screenshot showing preset icon grid + custom icon input
-   - Caption: "Create goal with custom icon selection"
-
-3. **Goal Detail Page** (`/savings-goals/<id>/`)
-   - Screenshot showing:
-     - Progress ring
-     - Stats (target, saved, remaining)
-     - Deposit form
-     - Contribution timeline
-   - Caption: "Detailed goal view with contribution history"
-
-4. **Add Funds**
-   - Screenshot of deposit form
-   - Caption: "Deposit funds to goal (creates expense automatically)"
-
-#### Code Files:
-```python
-# dashboard/models.py - SavingsGoal, SavingsContribution
-[PASTE MODELS]
-
-# dashboard/views.py - savings_goals, savings_goal_add, savings_goal_detail, savings_goal_add_funds, etc.
-[PASTE COMPLETE FUNCTIONS]
-
-# dashboard/templates/dashboard/savings_goals.html
-[PASTE COMPLETE CODE]
-
-# dashboard/templates/dashboard/savings_goal_detail.html
-[PASTE COMPLETE CODE]
-```
+`expenses/admin.py` — only sets site header/title/index_title. No separate Expense registration (all shown under User).
 
 ---
 
-### 4.7 PROFILE MODULE
+---
 
-#### Flow Diagram
-```
-Profile Page → Edit Name/Email → Upload Avatar → Export Data
-                                      ↓
-                                Remove Avatar
-```
+# MoSCoW Prioritisation
 
-#### Screenshots Required:
-1. **Profile Page** (`/profile/`)
-   - Screenshot showing avatar, user info, edit form
-   - Caption: "User profile management"
+## M — Must Have
+*Core features without which the application cannot function as a personal finance tracker.*
 
-2. **Avatar Upload**
-   - Screenshot after uploading avatar
-   - Caption: "Custom profile picture upload"
-
-3. **Export Data Link**
-   - Screenshot showing link to export page
-   - Caption: "Quick access to data export"
-
-#### Code Files:
-```python
-# dashboard/views.py - profile
-[PASTE COMPLETE FUNCTION]
-
-# dashboard/templates/dashboard/profile.html
-[PASTE COMPLETE CODE]
-```
+| # | Feature | Description |
+|---|---|---|
+| M1 | User Registration & Login | `MyUserCreationForm`, `LoginForm`, Django `authenticate`/`login`. Required to scope all data per user. |
+| M2 | Logout | `logout_view` — clears session, redirects to login. |
+| M3 | Expense CRUD | Add, edit, delete individual expenses with title, category, amount, date. Core data entry. |
+| M4 | Expense List with Filters | Month/year navigation, search by title, filter by category, custom date range. |
+| M5 | Dashboard — Spend Summary | Total spent, balance (income − spend), savings rate for the selected period. |
+| M6 | Income Entry | Add/edit/delete income records. Without income, balance and savings rate are meaningless. |
+| M7 | Category System | Default categories + user-defined custom categories merged at query time via `get_category_choices()`. |
+| M8 | User-scoped Data | Every model has a `user` FK. Every view filters by `request.user`. No data leakage between users. |
+| M9 | Django ORM & SQLite | Persistent storage. All models use `DecimalField` for monetary values to avoid float precision errors. |
+| M10 | Base Template & Navigation | `base.html`, `navbar.html` — consistent layout, auth-aware nav links across all pages. |
 
 ---
 
-### 4.8 EXPORT DATA MODULE
+## S — Should Have
+*Important features that significantly improve usability but the app can technically run without them.*
 
-#### Flow Diagram
-```
-Export Page → Select Filter Mode → Select Data Types → Select Categories → Download CSV
-    ↓
-Custom Range / Month-Year / Full Year
-```
-
-#### Screenshots Required:
-1. **Export Page** (`/export-data/`)
-   - Screenshot showing all filter options
-   - Caption: "Advanced data export with multiple filter modes"
-
-2. **Filter Modes**
-   - Screenshot showing 3 radio options (Custom Range, Month/Year, Full Year)
-   - Caption: "Flexible date filtering for exports"
-
-3. **Downloaded CSV**
-   - Screenshot of CSV opened in Excel showing UTF-8 BOM support
-   - Caption: "Excel-compatible CSV export with proper encoding"
-
-#### Code Files:
-```python
-# dashboard/views.py - export_data
-[PASTE COMPLETE FUNCTION]
-
-# dashboard/templates/dashboard/export.html
-[PASTE COMPLETE CODE]
-```
+| # | Feature | Description |
+|---|---|---|
+| S1 | Budget Limits per Category | `CategoryBudget` model. Per-month, per-category spending limits with progress bars and warning/danger status. |
+| S2 | Subscription Tracker | `Subscription` model with billing cycle, auto-advance of `next_billing`, automatic `Expense` creation per elapsed cycle. |
+| S3 | Savings Goals | `SavingsGoal` + `SavingsContribution`. Target, progress bar, deposit form, contribution history timeline. |
+| S4 | Spending Forecast | Projects end-of-month spend from daily average. Only shown for current month. Three statuses: good/warning/danger. |
+| S5 | Financial Health Indicator | Savings rate bucketed into Excellent/Good/Fair/Over Budget with colour and tip text. |
+| S6 | Previous Month Comparison | `savings_delta` — difference in savings rate vs prior month shown on dashboard. |
+| S7 | Toast Notifications | Django `messages` framework rendered as auto-dismissing slide-in toasts. All CRUD actions produce feedback. |
+| S8 | Dark Mode | CSS custom properties + `data-theme="dark"` toggle. Persisted in `localStorage`. Full dark mode coverage across all components. |
+| S9 | Profile Page | Edit name, username, email. Avatar upload/remove with old file cleanup. |
+| S10 | Change Password | `ChangePasswordForm` — username lookup + new password with confirmation. Accessible from navbar dropdown. |
+| S11 | Bulk Delete Expenses | Checkbox selection + bulk delete POST action on expense list. |
+| S12 | Category Warning on Expense Form | Inline JS warning when user picks `'Savings'` or `'Subscription'` category — links to the correct dedicated page. |
 
 ---
 
-### 4.9 ADMIN PANEL MODULE
+## C — Could Have
+*Nice-to-have features that improve the experience but are lower priority.*
 
-#### Flow Diagram
-```
-Admin Login → User List → Select User → View All User Data (Inlines)
-    ↓              ↓
-Actions:    Inlines:
-- Activate  - Profile
-- Deactivate- Income
-            - Expenses
-            - Budgets
-            - Subscriptions
-            - Savings Goals
-            - Custom Categories
-```
-
-#### Screenshots Required:
-1. **Admin Login** (`/admin/`)
-   - Screenshot of Django admin login
-   - Caption: "Admin panel authentication"
-
-2. **User List**
-   - Screenshot showing user list with date_joined, last_login, is_active
-   - Caption: "User management dashboard"
-
-3. **User Detail with Inlines**
-   - Screenshot showing all inlines on one page
-   - Caption: "Comprehensive user data view with inline editing"
-
-4. **Activate/Deactivate Actions**
-   - Screenshot showing bulk actions dropdown
-   - Caption: "Bulk user management actions"
-
-#### Code Files:
-```python
-# dashboard/admin.py
-[PASTE COMPLETE CODE]
-
-# expenses/admin.py
-[PASTE COMPLETE CODE]
-```
+| # | Feature | Description |
+|---|---|---|
+| C1 | Product Tour | JS tooltip-based 5-step tour on first login. Spotlight overlay + popover. Completion POSTs to `/tour-complete/`. |
+| C2 | Export Data Page | Full filter page — Custom Range / Month-Year / Full Year, data type checkboxes, category filter. Downloads UTF-8 BOM CSV (Excel-compatible). |
+| C3 | CSV Import (Upload Data) | Two-step preview → import flow. Validates columns, maps invalid categories to `'Other'`. |
+| C4 | Chart.js Visualisations | Doughnut chart (category breakdown) + line chart (daily spending) on dashboard. Data passed via `data-` attributes to avoid Django tags in `<script>` blocks. |
+| C5 | Month/Year Navigation | Prev/next arrows + dropdown selectors on dashboard, expense list, and budget settings. |
+| C6 | Top 5 Categories | Ranked list of highest-spend categories for the selected period. |
+| C7 | Recent Expenses Widget | Last 5 expenses shown on dashboard for quick reference. |
+| C8 | Subscription Monthly/Yearly Cost Summary | `monthly_cost` property normalises weekly/yearly cycles. Total monthly and yearly cost shown on subscriptions page. |
+| C9 | Savings Goal Icon Picker | Preset icon grid (10 Bootstrap Icons) + custom icon input with live preview in the add/edit modal. |
+| C10 | Admin Panel — User-Centric Inlines | All user data (income, expenses, budgets, subscriptions, goals) shown as read-only inlines on the User admin page. Activate/deactivate user actions. |
+| C11 | Mobile Responsive Design | Breakpoints at 991px, 768px, 480px. Touch targets ≥44px. Horizontal scroll on tables. Stacked layouts on small screens. |
+| C12 | Dynamic Category Colours | Runtime JS assigns palette colours to unknown/custom category badges that don't have predefined CSS classes. |
+| C13 | Avatar Upload | `ImageField` on `UserProfile`. Old file deleted from disk on replacement or removal. Shown in navbar. |
 
 ---
 
-### 4.10 PRODUCT TOUR (ONBOARDING)
+## W — Won't Have (for now)
+*Features that are out of scope for this version of the project.*
 
-#### Flow Diagram
-```
-First Login → Tour Overlay → 5 Steps → Complete → Mark onboarding_complete=True
-```
-
-#### Screenshots Required:
-1. **Tour Step 1** - Stats cards
-2. **Tour Step 2** - Filter controls
-3. **Tour Step 3** - Expenses link
-4. **Tour Step 4** - Savings goals link
-5. **Tour Step 5** - Theme toggle
-
-Caption for all: "Interactive product tour for new users"
-
-#### Code Files:
-```python
-# dashboard/views.py - tour_complete
-[PASTE FUNCTION]
-
-# dashboard/templates/dashboard/dashboard.html - Tour script section
-[PASTE TOUR JAVASCRIPT]
-```
+| # | Feature | Reason |
+|---|---|---|
+| W1 | Email Verification on Register | No email backend configured. Would require SMTP setup. |
+| W2 | Password Reset via Email | Same — no email backend. Change password is done by username lookup only. |
+| W3 | Multi-currency Support | All amounts are stored as plain decimals. No currency conversion logic. |
+| W4 | Recurring Expense Rules | Subscriptions auto-create expenses, but general recurring expenses (e.g. rent) have no automation. |
+| W5 | Notifications / Reminders | No push/email notifications for upcoming subscription billing or budget overruns. |
+| W6 | Data Sharing / Multi-user Households | All data is strictly per-user. No shared budgets or household accounts. |
+| W7 | Bank / API Integration | No Plaid, Open Banking, or any external financial data source integration. |
+| W8 | Production Deployment Config | `DEBUG=True`, `SECRET_KEY` is hardcoded, `ALLOWED_HOSTS=[]`. Not production-ready. |
+| W9 | Automated Tests | `tests.py` files exist in all apps but are empty. No unit or integration tests written. |
+| W10 | Pagination | Expense list and income list load all records for the selected period with no pagination. |
+| W11 | PDF Export | Only CSV export is supported. No PDF reports. |
+| W12 | Two-Factor Authentication | No 2FA support. |
 
 ---
 
-## SECTION 5: COMPLETE CODE LISTING
-
-### 5.1 Project Configuration
-```python
-# fintrack/settings.py
-[PASTE COMPLETE FILE]
-
-# fintrack/urls.py
-[PASTE COMPLETE FILE]
-
-# fintrack/wsgi.py
-[PASTE COMPLETE FILE]
-
-# fintrack/asgi.py
-[PASTE COMPLETE FILE]
-
-# manage.py
-[PASTE COMPLETE FILE]
-```
-
-### 5.2 Accounts App
-[All files already listed in Section 4.1]
-
-### 5.3 Expenses App
-[All files already listed in Section 4.3]
-
-### 5.4 Dashboard App
-[All files already listed in Sections 4.2, 4.4, 4.5, 4.6, 4.7, 4.8]
-
-### 5.5 Templates
-```html
-# templates/base.html
-[PASTE COMPLETE FILE]
-
-# templates/navbar.html
-[PASTE COMPLETE FILE]
-
-# templates/footer.html
-[PASTE COMPLETE FILE]
-
-# templates/landing.html
-[PASTE COMPLETE FILE]
-```
-
-### 5.6 Static Files
-```css
-# static/css/styles.css
-[PASTE COMPLETE FILE - This will be very long, ~5000 lines]
-```
-
-```javascript
-# static/js/filters.js
-[PASTE COMPLETE FILE]
-```
-
-### 5.7 Requirements
-```
-# requirements.txt
-Django==6.0.2
-Pillow==11.1.0
-python-dateutil==2.9.0
-```
-
----
-
-## SECTION 6: DATABASE DESIGN
-
-### 6.1 Models Documentation
-
-#### User (Django Built-in)
-- username: CharField
-- email: EmailField
-- password: CharField (hashed)
-- first_name: CharField
-- last_name: CharField
-- is_active: BooleanField
-- date_joined: DateTimeField
-
-#### UserProfile
-- user: OneToOneField(User)
-- avatar: ImageField
-- onboarding_complete: BooleanField
-
-#### Expense
-- user: ForeignKey(User)
-- title: CharField
-- category: CharField
-- amount: DecimalField
-- date: DateField
-
-#### Income
-- user: ForeignKey(User)
-- date: DateField
-- source: CharField (choices)
-- description: CharField
-- amount: DecimalField
-
-#### CustomCategory
-- user: ForeignKey(User)
-- name: CharField
-
-#### CategoryBudget
-- user: ForeignKey(User)
-- category: CharField
-- limit: DecimalField
-- month: PositiveSmallIntegerField
-- year: PositiveSmallIntegerField
-- Unique together: (user, category, month, year)
-
-#### Subscription
-- user: ForeignKey(User)
-- name: CharField
-- amount: DecimalField
-- cycle: CharField (weekly/monthly/yearly)
-- category: CharField
-- next_billing: DateField
-- status: CharField (active/paused/cancelled)
-- Methods: monthly_cost property, advance_billing_date()
-
-#### SavingsGoal
-- user: ForeignKey(User)
-- name: CharField
-- target: DecimalField
-- saved: DecimalField
-- target_date: DateField
-- icon: CharField
-- created_at: DateTimeField
-- Properties: progress_pct, remaining
-
-#### SavingsContribution
-- goal: ForeignKey(SavingsGoal)
-- amount: DecimalField
-- date: DateField
-
-### 6.2 Relationships
-- User → UserProfile (One-to-One)
-- User → Expense (One-to-Many)
-- User → Income (One-to-Many)
-- User → CustomCategory (One-to-Many)
-- User → CategoryBudget (One-to-Many)
-- User → Subscription (One-to-Many)
-- User → SavingsGoal (One-to-Many)
-- SavingsGoal → SavingsContribution (One-to-Many)
-
----
-
-## SECTION 7: KEY FEATURES EXPLANATION
-
-### 7.1 Authentication & Authorization
-- Django's built-in authentication system
-- Password hashing with PBKDF2
-- Session-based authentication
-- Login required decorators on all views
-- User-scoped data (every query filters by request.user)
-
-### 7.2 Dashboard Analytics
-- Real-time aggregation queries
-- Financial health score calculation
-- Savings rate comparison with previous month
-- Chart.js visualizations (doughnut, bar charts)
-- Spending forecast using daily average projection
-
-### 7.3 Budget Management
-- Per-category monthly limits
-- Real-time progress tracking
-- Visual status indicators (OK/Warning/Danger)
-- Budget alerts on dashboard
-- Copy limits from previous month
-
-### 7.4 Subscription Auto-billing
-- Automatic expense creation on billing date
-- `advance_billing_date()` method using dateutil.relativedelta
-- Cycle normalization (weekly/yearly → monthly cost)
-- Due-soon alerts (within 7 days)
-
-### 7.5 Savings Goals
-- Progress tracking with percentage calculation
-- Contribution history timeline
-- Automatic expense creation on deposit
-- Icon customization (preset + custom Bootstrap Icons)
-
-### 7.6 Data Export
-- UTF-8 BOM for Excel compatibility
-- Three filter modes (Custom Range, Month/Year, Full Year)
-- Multi-select data types and categories
-- CSV format with section headers
-
-### 7.7 Dark Mode
-- CSS custom properties for theming
-- localStorage persistence
-- Full coverage across all components
-- Smooth transitions
-
-### 7.8 Mobile Responsiveness
-- Breakpoints at 991px, 768px, 480px
-- Touch targets ≥44px
-- Horizontal scroll on tables
-- Stacked layouts on small screens
-
----
-
-## SECTION 8: TESTING
-
-### 8.1 Manual Testing Checklist
-- [ ] User registration with validation
-- [ ] Login/logout functionality
-- [ ] Password change
-- [ ] Add/edit/delete expense
-- [ ] Bulk delete expenses
-- [ ] Filter expenses by date/category
-- [ ] Add/edit/delete income
-- [ ] Create custom category
-- [ ] Set budget limits
-- [ ] Copy budget from last month
-- [ ] Add/edit/delete subscription
-- [ ] Subscription auto-billing
-- [ ] Create savings goal
-- [ ] Add funds to goal
-- [ ] CSV upload (preview + import)
-- [ ] Data export with filters
-- [ ] Profile edit and avatar upload
-- [ ] Dark mode toggle
-- [ ] Product tour completion
-- [ ] Admin panel user management
-- [ ] Mobile responsiveness
-
-### 8.2 Test Cases (Sample)
-
-**Test Case 1: User Registration**
-- Input: Valid username, email, matching passwords
-- Expected: User created, redirected to dashboard, success toast
-- Actual: [Pass/Fail]
-
-**Test Case 2: Budget Alert**
-- Input: Spend 85% of category budget
-- Expected: Warning alert appears on dashboard
-- Actual: [Pass/Fail]
-
-**Test Case 3: Subscription Auto-billing**
-- Input: Subscription with next_billing = yesterday
-- Expected: Expense created automatically, next_billing advanced
-- Actual: [Pass/Fail]
-
-[Add more test cases as needed]
-
----
-
-## SECTION 9: CHALLENGES & SOLUTIONS
-
-### Challenge 1: Subscription Auto-billing Logic
-**Problem:** How to automatically create expenses when billing date passes?
-**Solution:** Implemented `advance_billing_date()` method that runs on page load, creates expenses for all elapsed cycles using `dateutil.relativedelta` for accurate date arithmetic.
-
-### Challenge 2: Budget Alerts Performance
-**Problem:** Computing budget status for every category on every dashboard load.
-**Solution:** Only compute for current month (not custom ranges), use single aggregation query with `values().annotate()`.
-
-### Challenge 3: CSV Export Excel Compatibility
-**Problem:** Excel showing garbled characters for rupee symbol.
-**Solution:** Added UTF-8 BOM (`\ufeff`) at start of CSV file.
-
-### Challenge 4: Dark Mode Consistency
-**Problem:** Maintaining color consistency across 50+ components.
-**Solution:** Used CSS custom properties (`--bg`, `--text`, etc.) with single `[data-theme="dark"]` override block.
-
-### Challenge 5: Empty State UX
-**Problem:** Charts breaking when no data exists.
-**Solution:** Added conditional rendering with dedicated empty state component showing call-to-action.
-
----
-
-## SECTION 10: FUTURE ENHANCEMENTS
-
-1. **Email Notifications**
-   - Budget exceeded alerts
-   - Subscription due reminders
-   - Weekly spending summary
-
-2. **Recurring Expense Templates**
-   - Save common expenses as templates
-   - One-click apply to current month
-
-3. **Multi-currency Support**
-   - Currency selection per user
-   - Exchange rate API integration
-
-4. **Bank Integration**
-   - Plaid/Open Banking API
-   - Auto-import transactions
-
-5. **Mobile App**
-   - React Native or Flutter
-   - Push notifications
-
-6. **Advanced Analytics**
-   - Spending trends over time
-   - Category comparison charts
-   - Predictive budgeting
-
-7. **Shared Budgets**
-   - Household/family accounts
-   - Split expenses
-
-8. **PDF Reports**
-   - Monthly summary PDF
-   - Printable statements
-
----
-
-## SECTION 11: CONCLUSION
-
-FinTrack successfully demonstrates a full-stack web application with comprehensive personal finance management features. The project showcases proficiency in Django framework, database design, RESTful architecture, responsive UI design, and modern web development practices.
-
-**Key Achievements:**
-- 9 fully functional modules
-- 30+ database models and views
-- Mobile-responsive design
-- Dark mode support
-- Real-time analytics
-- Data import/export
-- Admin panel
-- Production-ready code structure
-
-**Learning Outcomes:**
-- Django MVT architecture
-- ORM and database relationships
-- Session management
-- Form validation
-- Chart.js integration
-- CSS theming with custom properties
-- Responsive design principles
-- User experience design
-
----
-
-## SECTION 12: REFERENCES
-
-1. Django Documentation - https://docs.djangoproject.com/
-2. Bootstrap 5 Documentation - https://getbootstrap.com/docs/5.3/
-3. Chart.js Documentation - https://www.chartjs.org/docs/
-4. Python dateutil - https://dateutil.readthedocs.io/
-5. MDN Web Docs - https://developer.mozilla.org/
-6. Stack Overflow - https://stackoverflow.com/
-
----
-
-## APPENDIX
-
-### A. Installation Guide
-```bash
-# Clone repository
-git clone <repository-url>
-cd fintrack
-
-# Create virtual environment
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Run migrations
-python manage.py makemigrations
-python manage.py migrate
-
-# Create superuser
-python manage.py createsuperuser
-
-# Run development server
-python manage.py runserver
-
-# Access application
-# http://127.0.0.1:8000/
-```
-
-### B. Deployment Checklist
-- [ ] Set DEBUG = False
-- [ ] Configure ALLOWED_HOSTS
-- [ ] Use environment variables for SECRET_KEY
-- [ ] Set up PostgreSQL/MySQL (replace SQLite)
-- [ ] Configure static files serving (WhiteNoise/Nginx)
-- [ ] Set up media files storage (S3/CloudFront)
-- [ ] Enable HTTPS
-- [ ] Configure email backend
-- [ ] Set up logging
-- [ ] Add monitoring (Sentry)
-
-### C. Git Commit History
-[Include major commits with descriptions]
-
-### D. Team Contributions
-[If group project, list individual contributions]
-
----
-
-## FORMATTING GUIDELINES FOR WORD DOCUMENT
-
-1. **Fonts:**
-   - Headings: Arial Bold, 14-16pt
-   - Body: Arial, 11pt
-   - Code: Consolas/Courier New, 9pt
-
-2. **Spacing:**
-   - Line spacing: 1.15
-   - Before paragraph: 6pt
-   - After paragraph: 6pt
-
-3. **Page Setup:**
-   - Margins: 1 inch all sides
-   - Page numbers: Bottom center
-   - Header: Project name + your name
-
-4. **Code Blocks:**
-   - Use table with light gray background
-   - Border: 1pt solid gray
-   - Syntax highlighting (if possible)
-
-5. **Screenshots:**
-   - High resolution (1920x1080 or higher)
-   - Add border (1pt black)
-   - Caption below each image
-   - Number all figures (Figure 1, Figure 2, etc.)
-
-6. **Tables:**
-   - Header row: Bold, light blue background
-   - Alternate row shading for readability
-
----
-
-## ESTIMATED PAGE COUNT
-
-- Section 1-3: 10 pages
-- Section 4 (Screenshots + Code): 150-200 pages
-- Section 5 (Complete Code): 100-150 pages
-- Section 6-12: 30 pages
-
-**Total: 290-390 pages**
-
----
-
-## TIPS FOR CREATING THE DOCUMENT
-
-1. **Take screenshots systematically:**
-   - Use consistent browser window size
-   - Clear browser cache for clean UI
-   - Use dummy data that looks realistic
-   - Capture both light and dark modes
-
-2. **Code formatting:**
-   - Use syntax highlighter (Pygments, highlight.js)
-   - Add line numbers
-   - Keep indentation consistent
-   - Add comments explaining complex logic
-
-3. **Proofread:**
-   - Check all code for typos
-   - Verify all screenshots are clear
-   - Ensure consistent terminology
-   - Run spell check
-
-4. **Create Table of Contents:**
-   - Use Word's automatic TOC feature
-   - Update before final submission
-
-5. **Add page breaks:**
-   - Start each major section on new page
-   - Don't split screenshots across pages
-
----
-
-This guide provides the complete structure. You now need to:
-1. Take all the screenshots as listed
-2. Copy-paste all code files into the document
-3. Format according to guidelines
-4. Add your personal details
-5. Proofread and submit
+## Summary Table
+
+| Priority | Count | Key Theme |
+|---|---|---|
+| Must Have | 10 | Auth, expense CRUD, income, categories, data scoping |
+| Should Have | 12 | Budgets, subscriptions, savings, forecast, UX polish |
+| Could Have | 13 | Charts, export, import, tour, admin, mobile, icons |
+| Won't Have | 12 | Email, multi-currency, integrations, production hardening |
